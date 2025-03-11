@@ -71,12 +71,15 @@ A documentação interativa da API estará disponível em:
 ## Endpoints
 
 - `GET /`: Endpoint raiz que retorna uma mensagem de boas-vindas
-- `POST /extract-text`: Extrai texto de um arquivo PDF
+- `POST /extract-text`: Extrai texto de um arquivo PDF enviado como upload
+- `POST /extract-text-base64`: Extrai texto de um arquivo PDF enviado como string base64
 - `GET /health`: Verificação de saúde da API
 
 ## Como usar a API
 
-### Exemplo de uso com curl
+### Método 1: Upload de Arquivo
+
+#### Exemplo com curl
 
 ```bash
 curl -X POST "http://localhost:8000/extract-text" \
@@ -85,7 +88,7 @@ curl -X POST "http://localhost:8000/extract-text" \
   -F "file=@caminho/para/seu/arquivo.pdf"
 ```
 
-### Exemplo de uso com Python
+#### Exemplo com Python
 
 ```python
 import requests
@@ -94,6 +97,41 @@ url = "http://localhost:8000/extract-text"
 files = {"file": open("caminho/para/seu/arquivo.pdf", "rb")}
 
 response = requests.post(url, files=files)
+print(response.json())
+```
+
+### Método 2: Envio em Base64
+
+#### Exemplo com curl
+
+```bash
+curl -X POST "http://localhost:8000/extract-text-base64" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_base64": "JVBERi0xLjMKJcTl8uXrp...",
+    "filename": "documento.pdf"
+  }'
+```
+
+#### Exemplo com Python
+
+```python
+import requests
+import base64
+
+url = "http://localhost:8000/extract-text-base64"
+
+# Ler o arquivo PDF e convertê-lo para base64
+with open("caminho/para/seu/arquivo.pdf", "rb") as pdf_file:
+    pdf_base64 = base64.b64encode(pdf_file.read()).decode('utf-8')
+
+payload = {
+    "file_base64": pdf_base64,
+    "filename": "documento.pdf"  # Opcional
+}
+
+response = requests.post(url, json=payload)
 print(response.json())
 ```
 
@@ -157,6 +195,7 @@ A API utiliza os seguintes códigos de status HTTP:
 | `EMPTY_FILE` | O arquivo está vazio | 400 |
 | `FILE_READ_ERROR` | Erro ao ler o arquivo | 400 |
 | `INVALID_PDF` | O arquivo fornecido não é um PDF válido | 400 |
+| `INVALID_BASE64` | O conteúdo base64 fornecido é inválido | 400 |
 | `EMPTY_PDF` | O PDF não contém páginas | 400 |
 | `PDF_PROTECTED` | O PDF está protegido por senha | 400 |
 | `PDF_PROCESSING_ERROR` | Erro ao processar o PDF | 500 |
@@ -165,9 +204,9 @@ A API utiliza os seguintes códigos de status HTTP:
 
 ## Integração com n8n
 
-Para consumir esta API no n8n, siga os passos abaixo:
+Para consumir esta API no n8n, você pode usar um dos dois métodos:
 
-### Configuração do Fluxo de Trabalho no n8n
+### Método 1: Upload de Arquivo
 
 1. Adicione um nó HTTP Request
 2. Configure o nó:
@@ -183,7 +222,25 @@ Para consumir esta API no n8n, siga os passos abaixo:
        - **Value**: =data (ou o nome da propriedade que contém o arquivo PDF)
        - **Type**: File
 
-3. Adicione um nó Function para tratar a resposta:
+### Método 2: Envio em Base64 (Recomendado)
+
+1. Adicione um nó HTTP Request
+2. Configure o nó:
+   - **Method**: POST
+   - **URL**: http://localhost:8000/extract-text-base64
+   - **Authentication**: None
+   - **Request Format**: JSON
+   - **JSON/RAW Parameters**:
+     ```json
+     {
+       "file_base64": "={{$binary.data.base64}}",
+       "filename": "={{$binary.data.fileName}}"
+     }
+     ```
+
+### Processamento da Resposta
+
+Adicione um nó Function para tratar a resposta:
 
 ```javascript
 // Verificar se houve erro
@@ -211,29 +268,39 @@ return {
 };
 ```
 
-### Exemplo de Fluxo de Trabalho Completo
+### Exemplo de Fluxo de Trabalho Completo (Base64)
 
 ```json
 {
   "nodes": [
     {
       "parameters": {
-        "url": "http://localhost:8000/extract-text",
+        "url": "http://localhost:8000/extract-text-base64",
         "authentication": "none",
         "method": "POST",
-        "sendBinaryData": true,
-        "binaryPropertyName": "data",
-        "bodyParametersUi": {
-          "parameter": [
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "name": "file",
-              "value": "=data",
-              "inputDataFieldName": "data",
-              "parameterType": "formBinaryData"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "options": {}
+        "options": {},
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file_base64",
+              "value": "={{$binary.data.base64}}"
+            },
+            {
+              "name": "filename",
+              "value": "={{$binary.data.fileName}}"
+            }
+          ]
+        }
       },
       "name": "Extract PDF Text",
       "type": "n8n-nodes-base.httpRequest",
