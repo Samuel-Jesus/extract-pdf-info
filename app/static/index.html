@@ -30,11 +30,16 @@
             margin-bottom: 5px;
             font-weight: bold;
         }
-        input[type="file"] {
+        input[type="file"], textarea {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+            font-size: 14px;
         }
         button {
             background-color: #4CAF50;
@@ -104,19 +109,98 @@
             border-radius: 4px;
             color: #155724;
         }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: #fff;
+            border-bottom: 1px solid #fff;
+            margin-bottom: -1px;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .code-example {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+        .help-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <h1>Extrator de Texto de PDF</h1>
     
     <div class="container">
-        <form id="pdfForm">
-            <div class="form-group">
-                <label for="pdfFile">Selecione um arquivo PDF:</label>
-                <input type="file" id="pdfFile" name="file" accept=".pdf" required>
+        <div class="tabs">
+            <div class="tab active" data-tab="upload">Upload de Arquivo</div>
+            <div class="tab" data-tab="base64">Base64</div>
+        </div>
+        
+        <div class="tab-content active" id="upload-tab">
+            <form id="pdfForm">
+                <div class="form-group">
+                    <label for="pdfFile">Selecione um arquivo PDF:</label>
+                    <input type="file" id="pdfFile" name="file" accept=".pdf" required>
+                </div>
+                <button type="submit">Extrair Texto</button>
+            </form>
+        </div>
+        
+        <div class="tab-content" id="base64-tab">
+            <form id="base64Form">
+                <div class="form-group">
+                    <label for="pdfBase64">Cole o conteúdo do PDF em Base64:</label>
+                    <textarea id="pdfBase64" name="file_base64" required placeholder="Cole aqui o conteúdo do PDF em formato base64..."></textarea>
+                    <p class="help-text">Você pode incluir o prefixo data:application/pdf;base64, ou apenas o conteúdo base64.</p>
+                </div>
+                <div class="form-group">
+                    <label for="filename">Nome do arquivo (opcional):</label>
+                    <input type="text" id="filename" name="filename" placeholder="documento.pdf">
+                </div>
+                <button type="submit">Extrair Texto</button>
+            </form>
+            
+            <div class="code-example">
+                <h4>Exemplo de uso com n8n:</h4>
+                <pre>// Configuração do nó HTTP Request
+{
+  "url": "http://localhost:8000/extract-text-base64",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "file_base64": "JVBERi0xLjMKJcTl8uXrp...", // Conteúdo base64 do PDF
+    "filename": "documento.pdf"
+  }
+}</pre>
             </div>
-            <button type="submit">Extrair Texto</button>
-        </form>
+        </div>
         
         <div class="loading" id="loading">
             Processando o PDF... Por favor, aguarde.
@@ -149,6 +233,103 @@
     </div>
 
     <script>
+        // Gerenciamento de abas
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remover classe active de todas as abas
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                // Adicionar classe active à aba clicada
+                this.classList.add('active');
+                
+                // Esconder todos os conteúdos de aba
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                // Mostrar o conteúdo da aba clicada
+                document.getElementById(this.dataset.tab + '-tab').classList.add('active');
+            });
+        });
+        
+        // Função para mostrar erro
+        function showError(message, errorCode, details, solution) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('errorMessage').textContent = message || 'Erro desconhecido';
+            
+            if (errorCode) {
+                document.getElementById('errorCode').textContent = `Código de erro: ${errorCode}`;
+            } else {
+                document.getElementById('errorCode').textContent = '';
+            }
+            
+            // Mostrar solução se disponível
+            if (solution) {
+                document.getElementById('errorSolution').textContent = `Solução: ${solution}`;
+                document.getElementById('errorSolution').style.display = 'block';
+            } else {
+                document.getElementById('errorSolution').style.display = 'none';
+            }
+            
+            // Mostrar detalhes técnicos se disponíveis
+            if (details) {
+                document.getElementById('errorDetails').textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+            } else {
+                document.getElementById('errorDetails').textContent = '';
+            }
+            
+            document.getElementById('error').style.display = 'block';
+        }
+        
+        // Função para mostrar resultado
+        function showResult(data) {
+            // Verificar se há avisos
+            if (data.warning) {
+                document.getElementById('warningMessage').textContent = data.warning;
+                document.getElementById('warning').style.display = 'block';
+            } else {
+                document.getElementById('warning').style.display = 'none';
+            }
+            
+            // Exibir informações do arquivo
+            if (data.filename) {
+                document.getElementById('filename').textContent = `Arquivo: ${data.filename}`;
+            } else {
+                document.getElementById('filename').textContent = '';
+            }
+            
+            if (data.page_count !== undefined) {
+                document.getElementById('pageCount').textContent = `Número de páginas: ${data.page_count}`;
+            } else {
+                document.getElementById('pageCount').textContent = '';
+            }
+            
+            // Exibir texto extraído
+            document.getElementById('extractedText').textContent = data.extracted_text || '';
+            
+            // Mostrar a seção de resultados
+            document.getElementById('result').style.display = 'block';
+        }
+        
+        // Função para processar a resposta da API
+        async function processApiResponse(response) {
+            const data = await response.json();
+            
+            // Esconder loading
+            document.getElementById('loading').style.display = 'none';
+            
+            if (!response.ok) {
+                // Tratar erro da API
+                showError(
+                    data.message, 
+                    data.error_code, 
+                    data.details, 
+                    data.details && data.details.solution
+                );
+                return;
+            }
+            
+            // Mostrar resultado
+            showResult(data);
+        }
+        
+        // Formulário de upload de arquivo
         document.getElementById('pdfForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -175,68 +356,60 @@
                     body: formData
                 });
                 
-                // Esconder loading
-                document.getElementById('loading').style.display = 'none';
-                
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    // Tratar erro da API
-                    document.getElementById('errorMessage').textContent = data.message || 'Erro desconhecido';
-                    
-                    if (data.error_code) {
-                        document.getElementById('errorCode').textContent = `Código de erro: ${data.error_code}`;
-                    } else {
-                        document.getElementById('errorCode').textContent = '';
-                    }
-                    
-                    // Mostrar solução se disponível
-                    if (data.details && data.details.solution) {
-                        document.getElementById('errorSolution').textContent = `Solução: ${data.details.solution}`;
-                        document.getElementById('errorSolution').style.display = 'block';
-                    } else {
-                        document.getElementById('errorSolution').style.display = 'none';
-                    }
-                    
-                    // Mostrar detalhes técnicos se disponíveis
-                    if (data.details) {
-                        document.getElementById('errorDetails').textContent = JSON.stringify(data.details, null, 2);
-                    } else {
-                        document.getElementById('errorDetails').textContent = '';
-                    }
-                    
-                    document.getElementById('error').style.display = 'block';
-                    return;
-                }
-                
-                // Verificar se há avisos
-                if (data.warning) {
-                    document.getElementById('warningMessage').textContent = data.warning;
-                    document.getElementById('warning').style.display = 'block';
-                }
-                
-                // Exibir informações do arquivo
-                if (data.filename) {
-                    document.getElementById('filename').textContent = `Arquivo: ${data.filename}`;
-                }
-                
-                if (data.page_count !== undefined) {
-                    document.getElementById('pageCount').textContent = `Número de páginas: ${data.page_count}`;
-                }
-                
-                // Exibir texto extraído
-                document.getElementById('extractedText').textContent = data.extracted_text || '';
-                
-                // Mostrar a seção de resultados
-                document.getElementById('result').style.display = 'block';
+                await processApiResponse(response);
                 
             } catch (error) {
                 // Esconder loading e mostrar erro
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('errorMessage').textContent = `Erro ao se comunicar com o servidor: ${error.message}`;
-                document.getElementById('errorCode').textContent = 'Código de erro: CLIENT_ERROR';
-                document.getElementById('errorDetails').textContent = JSON.stringify({ error: error.toString() }, null, 2);
-                document.getElementById('error').style.display = 'block';
+                showError(
+                    `Erro ao se comunicar com o servidor: ${error.message}`,
+                    'CLIENT_ERROR',
+                    { error: error.toString() }
+                );
+                console.error('Erro:', error);
+            }
+        });
+        
+        // Formulário de base64
+        document.getElementById('base64Form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const base64Input = document.getElementById('pdfBase64');
+            const filenameInput = document.getElementById('filename');
+            
+            if (!base64Input.value.trim()) {
+                alert('Por favor, insira o conteúdo do PDF em base64.');
+                return;
+            }
+            
+            // Mostrar loading e esconder resultados anteriores
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('warning').style.display = 'none';
+            
+            const requestData = {
+                file_base64: base64Input.value.trim(),
+                filename: filenameInput.value.trim() || undefined
+            };
+            
+            try {
+                const response = await fetch('/extract-text-base64', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                await processApiResponse(response);
+                
+            } catch (error) {
+                // Esconder loading e mostrar erro
+                showError(
+                    `Erro ao se comunicar com o servidor: ${error.message}`,
+                    'CLIENT_ERROR',
+                    { error: error.toString() }
+                );
                 console.error('Erro:', error);
             }
         });
