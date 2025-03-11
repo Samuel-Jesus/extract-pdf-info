@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extrator de PDF</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #fff;
+            white-space: pre-wrap;
+            display: none;
+        }
+        .loading {
+            text-align: center;
+            margin-top: 20px;
+            display: none;
+        }
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+        }
+        .warning {
+            color: #856404;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+        }
+        .details {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .solution {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <h1>Extrator de Texto de PDF</h1>
+    
+    <div class="container">
+        <form id="pdfForm">
+            <div class="form-group">
+                <label for="pdfFile">Selecione um arquivo PDF:</label>
+                <input type="file" id="pdfFile" name="file" accept=".pdf" required>
+            </div>
+            <button type="submit">Extrair Texto</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            Processando o PDF... Por favor, aguarde.
+        </div>
+        
+        <div class="error" id="error">
+            <h3>Erro ao processar o PDF</h3>
+            <div id="errorMessage"></div>
+            <div id="errorCode"></div>
+            <div class="solution" id="errorSolution" style="display: none;"></div>
+            <details>
+                <summary>Detalhes técnicos</summary>
+                <div class="details" id="errorDetails"></div>
+            </details>
+        </div>
+        
+        <div class="warning" id="warning" style="display: none;">
+            <h3>Aviso</h3>
+            <div id="warningMessage"></div>
+        </div>
+        
+        <div id="result">
+            <h3>Texto Extraído</h3>
+            <div class="file-info">
+                <div id="filename"></div>
+                <div id="pageCount"></div>
+            </div>
+            <div id="extractedText"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('pdfForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('pdfFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Por favor, selecione um arquivo PDF.');
+                return;
+            }
+            
+            // Mostrar loading e esconder resultados anteriores
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('warning').style.display = 'none';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/extract-text', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                // Esconder loading
+                document.getElementById('loading').style.display = 'none';
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Tratar erro da API
+                    document.getElementById('errorMessage').textContent = data.message || 'Erro desconhecido';
+                    
+                    if (data.error_code) {
+                        document.getElementById('errorCode').textContent = `Código de erro: ${data.error_code}`;
+                    } else {
+                        document.getElementById('errorCode').textContent = '';
+                    }
+                    
+                    // Mostrar solução se disponível
+                    if (data.details && data.details.solution) {
+                        document.getElementById('errorSolution').textContent = `Solução: ${data.details.solution}`;
+                        document.getElementById('errorSolution').style.display = 'block';
+                    } else {
+                        document.getElementById('errorSolution').style.display = 'none';
+                    }
+                    
+                    // Mostrar detalhes técnicos se disponíveis
+                    if (data.details) {
+                        document.getElementById('errorDetails').textContent = JSON.stringify(data.details, null, 2);
+                    } else {
+                        document.getElementById('errorDetails').textContent = '';
+                    }
+                    
+                    document.getElementById('error').style.display = 'block';
+                    return;
+                }
+                
+                // Verificar se há avisos
+                if (data.warning) {
+                    document.getElementById('warningMessage').textContent = data.warning;
+                    document.getElementById('warning').style.display = 'block';
+                }
+                
+                // Exibir informações do arquivo
+                if (data.filename) {
+                    document.getElementById('filename').textContent = `Arquivo: ${data.filename}`;
+                }
+                
+                if (data.page_count !== undefined) {
+                    document.getElementById('pageCount').textContent = `Número de páginas: ${data.page_count}`;
+                }
+                
+                // Exibir texto extraído
+                document.getElementById('extractedText').textContent = data.extracted_text || '';
+                
+                // Mostrar a seção de resultados
+                document.getElementById('result').style.display = 'block';
+                
+            } catch (error) {
+                // Esconder loading e mostrar erro
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('errorMessage').textContent = `Erro ao se comunicar com o servidor: ${error.message}`;
+                document.getElementById('errorCode').textContent = 'Código de erro: CLIENT_ERROR';
+                document.getElementById('errorDetails').textContent = JSON.stringify({ error: error.toString() }, null, 2);
+                document.getElementById('error').style.display = 'block';
+                console.error('Erro:', error);
+            }
+        });
+    </script>
+</body>
+</html> 
