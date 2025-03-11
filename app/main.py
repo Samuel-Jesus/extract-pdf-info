@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, Body, Form, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 import fitz  # PyMuPDF para extrair texto
@@ -7,7 +7,9 @@ from PIL import Image
 import io
 import os
 import traceback
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+import base64
+from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="API de Extração de PDF",
@@ -42,6 +44,11 @@ async def api_error_handler(request, exc: APIError):
             "details": exc.details
         }
     )
+
+# Modelo para receber PDF em base64
+class PDFBase64Request(BaseModel):
+    file_base64: str = Field(..., description="Conteúdo do PDF em formato base64")
+    filename: Optional[str] = Field(None, description="Nome do arquivo (opcional)")
 
 def extract_text_from_pdf(pdf_bytes) -> Dict[str, Any]:
     """
@@ -155,10 +162,40 @@ def extract_text_from_pdf(pdf_bytes) -> Dict[str, Any]:
         if 'doc' in locals():
             doc.close()
 
-@app.post("/extract-text", status_code=status.HTTP_200_OK)
-async def extract_text(file: UploadFile = File(...)):
+# Função para processar o PDF e retornar o resultado
+async def process_pdf(pdf_bytes: bytes, filename: Optional[str] = None) -> Dict[str, Any]:
     """
-    Extrai texto de um arquivo PDF.
+    Processa um PDF e retorna o texto extraído.
+    
+    Args:
+        pdf_bytes: Bytes do arquivo PDF
+        filename: Nome do arquivo (opcional)
+        
+    Returns:
+        Dicionário com o texto extraído e metadados
+    """
+    # Verificar se o arquivo está vazio
+    if len(pdf_bytes) == 0:
+        raise APIError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="EMPTY_FILE",
+            message="O arquivo está vazio",
+            details={}
+        )
+    
+    # Extrair texto do PDF
+    result = extract_text_from_pdf(pdf_bytes)
+    
+    # Adicionar informações do arquivo à resposta
+    if filename:
+        result["filename"] = filename
+    
+    return result
+
+@app.post("/extract-text", status_code=status.HTTP_200_OK)
+async def extract_text(file: Optional[UploadFile] = File(None)):
+    """
+    Extrai texto de um arquivo PDF enviado como upload.
     
     Args:
         file: Arquivo PDF para extrair o texto
@@ -204,20 +241,62 @@ async def extract_text(file: UploadFile = File(...)):
                 }
             )
         
-        # Verificar se o arquivo está vazio
-        if len(pdf_bytes) == 0:
+        # Processar o PDF
+        result = await process_pdf(pdf_bytes, file.filename)
+        
+        return result
+    
+    except APIError:
+        # Re-lançar APIErrors para serem tratados pelo manipulador
+        raise
+    except Exception as e:
+        # Capturar erros não tratados
+        error_traceback = traceback.format_exc()
+        raise APIError(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code="UNEXPECTED_ERROR",
+            message=f"Erro inesperado: {str(e)}",
+            details={
+                "traceback": error_traceback
+            }
+        )
+
+@app.post("/extract-text-base64", status_code=status.HTTP_200_OK)
+async def extract_text_base64(request: PDFBase64Request):
+    """
+    Extrai texto de um arquivo PDF enviado como string base64.
+    
+    Args:
+        request: Objeto contendo o PDF em formato base64 e opcionalmente o nome do arquivo
+    
+    Returns:
+        JSON com o texto extraído ou mensagem de erro
+    
+    Raises:
+        HTTPException: Se ocorrer um erro durante o processamento
+    """
+    try:
+        # Decodificar o PDF de base64 para bytes
+        try:
+            # Remover possíveis prefixos de data URI
+            base64_data = request.file_base64
+            if "," in base64_data:
+                base64_data = base64_data.split(",", 1)[1]
+            
+            pdf_bytes = base64.b64decode(base64_data)
+        except Exception as e:
             raise APIError(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                error_code="EMPTY_FILE",
-                message="O arquivo está vazio",
-                details={}
+                error_code="INVALID_BASE64",
+                message="O conteúdo base64 fornecido é inválido",
+                details={
+                    "original_error": str(e)
+                }
             )
         
-        # Extrair texto do PDF
-        result = extract_text_from_pdf(pdf_bytes)
-        
-        # Adicionar informações do arquivo à resposta
-        result["filename"] = file.filename
+        # Processar o PDF
+        filename = request.filename or "documento.pdf"
+        result = await process_pdf(pdf_bytes, filename)
         
         return result
     
