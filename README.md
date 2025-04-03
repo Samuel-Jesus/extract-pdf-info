@@ -47,6 +47,8 @@ Uma API simples construída com FastAPI para extrair texto de arquivos PDF.
 
 ## Executando a API
 
+### Ambiente de Desenvolvimento
+
 Para iniciar o servidor de desenvolvimento:
 
 ```
@@ -60,6 +62,41 @@ python run.py
 ```
 
 A API estará disponível em `http://localhost:8000`
+
+### Ambiente de Produção com PM2
+
+Para executar a aplicação em produção usando PM2:
+
+1. Instale o PM2 globalmente (requer Node.js):
+   ```
+   npm install -g pm2
+   ```
+
+2. Inicie a aplicação usando o arquivo de configuração do PM2:
+   ```
+   pm2 start ecosystem.config.js
+   ```
+
+3. Configure o PM2 para iniciar automaticamente na inicialização do sistema:
+   ```
+   pm2 save
+   pm2 startup
+   ```
+   Siga as instruções mostradas após este comando.
+
+4. Comandos úteis do PM2:
+   - Ver status da aplicação: `pm2 status`
+   - Ver logs: `pm2 logs pdf-extractor-api`
+   - Reiniciar: `pm2 restart pdf-extractor-api`
+   - Parar: `pm2 stop pdf-extractor-api`
+   - Remover da gestão: `pm2 delete pdf-extractor-api`
+
+5. Monitoramento avançado:
+   ```
+   pm2 monit
+   ```
+
+A API em produção estará disponível em `http://seuservidor:8000`
 
 ## Documentação
 
